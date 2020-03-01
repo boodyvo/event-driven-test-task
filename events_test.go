@@ -12,13 +12,8 @@ import (
 	"github.com/boodyvo/snapshot-backup/statemng"
 )
 
-const (
-	printActionId = "0"
-	failActionId = "1"
-	emptyActionId = "2"
-	addRandomValueActionId = "3"
-	failRandomActionId = "4"
-)
+
+const maxIteration = 100
 
 var (
 	printAction events.Action = func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
@@ -26,66 +21,85 @@ var (
 		return input, nil
 	}
 
-	failAction events.Action = func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
-		fmt.Printf("will fail the action")
-		return input, fmt.Errorf("failed")
-	}
-
-	emptyAction events.Action = func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
-		return input, nil
-	}
-
 	addRandomValueAction events.Action = func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 		input["value"] = rand.Intn(1000)
+
 		return input, nil
 	}
 
 	failRandomAction = func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
-		val := rand.Intn(100)
-		if val < 50 {
-			return nil, fmt.Errorf("random fail")
+		// always fail if flag random is set
+		if input["fail"] != nil {
+			return nil, fmt.Errorf("permanent fail")
+		}
+		// randomly fail if flag random is set
+		if input["random"] != nil {
+			val := rand.Intn(100)
+
+			if val < 50 {
+				return nil, fmt.Errorf("random fail")
+			}
 		}
 
 		return input, nil
 	}
 
-	actions = map[string]events.Action{
-		printActionId: printAction,
-		failActionId: failAction,
-		emptyActionId: emptyAction,
-		addRandomValueActionId: addRandomValueAction,
-		failRandomActionId: failRandomAction,
+	actions = []events.Action{
+		printAction,
+		addRandomValueAction,
+		failRandomAction,
 	}
 )
 
-const maxIteration = 100
-
 func TestEvents(t *testing.T) {
-	testInput := map[string]interface{}{
-		"name": "Vasya",
-		"action": "send_email",
-	}
 	store := statemng.NewStore()
 	eventManager := events.NewManager(actions, store)
-	eventOk := []string{printActionId, emptyActionId, printActionId}
-	_, err := eventManager.ExecuteEvent(context.Background(), testInput, eventOk)
+	eventOk := map[string]interface{}{
+		"0": map[string]interface{}{
+			"name": "first",
+		},
+		"1": map[string]interface{}{
+			"name": "second",
+		},
+		"2": map[string]interface{}{
+			"name": "third",
+		},
+		"other": "some other info",
+	}
+	_, err := eventManager.ExecuteEvent(context.Background(), eventOk)
 	require.Nil(t, err)
 
-	eventFailAlways := []string{emptyActionId, failActionId}
-	idFail, err := eventManager.ExecuteEvent(context.Background(), testInput, eventFailAlways)
-	for i := 0; i < 5; i++ {
-		_, err = eventManager.RestoreEvent(context.Background(), idFail)
-		if err == nil {
-			break
-		}
+	eventAlwaysFail := map[string]interface{}{
+		"0": map[string]interface{}{
+			"name": "first",
+		},
+		"1": map[string]interface{}{
+			"name": "second",
+		},
+		"2": map[string]interface{}{
+			"always": true,
+		},
+		"other": "some other info",
 	}
+	_, err = eventManager.ExecuteEvent(context.Background(), eventAlwaysFail)
+	require.Nil(t, err)
 
-
-	eventRandomFail := []string{failRandomActionId, failRandomActionId}
-	id, err := eventManager.ExecuteEvent(context.Background(), testInput, eventRandomFail)
+	eventRandomFail := map[string]interface{}{
+		"0": map[string]interface{}{
+			"name": "first",
+		},
+		"1": map[string]interface{}{
+			"name": "second",
+		},
+		"2": map[string]interface{}{
+			"random": true,
+		},
+		"other": "some other info",
+	}
+	id, err := eventManager.ExecuteEvent(context.Background(), eventRandomFail)
 	// checking that error occurs
 	for err == nil {
-		id, err = eventManager.ExecuteEvent(context.Background(), testInput, eventRandomFail)
+		id, err = eventManager.ExecuteEvent(context.Background(), eventRandomFail)
 	}
 
 	i := 0

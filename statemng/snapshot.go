@@ -3,16 +3,54 @@ package statemng
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
-type State struct {
-	Id        string
+const ActionNumber = 3
+
+type ActionStatus int
+
+const (
+	NotExecuted ActionStatus = 0
+	Started     ActionStatus = 1
+	Succeed     ActionStatus = 2
+	Failed      ActionStatus = 3
+)
+
+type ActionState struct {
 	Input     map[string]interface{}
 	Output    map[string]interface{}
-	// actions that needs to be executed
-	Actions   []string
+	Status    ActionStatus
+}
+
+type State struct {
+	Id           string
+	Timestamp    time.Time
+	Event        map[string]interface{}
+	actionStates []*ActionState
 	// already completed actions, timestamp should be saved here
-	Completed int
+	Completed    bool
+}
+
+func (s *State) UpdateAction(id int, action *ActionState) {
+	if id >= ActionNumber {
+		return
+	}
+	s.actionStates[id] = action
+}
+
+func (s *State) GetActionState(id int) (*ActionState) {
+	return s.actionStates[id]
+}
+
+func NewState(id string, event map[string]interface{}) *State {
+	return &State{
+		Id:           id,
+		Timestamp:    time.Now(),
+		Event:        event,
+		actionStates: make([]*ActionState, ActionNumber),
+		Completed:    false,
+	}
 }
 
 type Store interface {
@@ -51,14 +89,4 @@ func (s *StoreImp) RestoreState(id string) (*State, error) {
 	}
 
 	return state, nil
-}
-
-func NewState(id string, input map[string]interface{}, actions []string) *State {
-	return &State{
-		Id:        id,
-		Input:     input,
-		Output:    make(map[string]interface{}),
-		Actions:   actions,
-		Completed: -1,
-	}
 }
